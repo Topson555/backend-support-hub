@@ -1,0 +1,25 @@
+{
+  "name": "support-hub-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server.js",
+    "build": "esbuild server.js --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "start": "node dist/server.cjs"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.6.2",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "nodemon": "^3.1.14",
+    "tsx": "^4.22.1",
+    "vite": "^8.0.13"
+  }
+}
