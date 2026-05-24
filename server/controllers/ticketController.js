@@ -1,5 +1,6 @@
 import Ticket from "../models/Ticket.js";
 import User from "../models/User.js";
+import { generateAutoResponse, generateAIInsights } from "../services/geminiService.js";
 
 export const getAllTickets = async (req, res) => {
   try {
@@ -87,6 +88,42 @@ export const createTicket = async (req, res) => {
     
     if (io) io.emit("ticket:created", newTicket);
     res.status(201).json(newTicket);
+
+    // AI Auto-Responder trigger (runs asynchronously in background so client response is instant)
+    setTimeout(async () => {
+      try {
+        console.log(">>> AI Auto-Responder background job started for ticket:", newTicket._id);
+        const [aiBody, insights] = await Promise.all([
+          generateAutoResponse(newTicket),
+          generateAIInsights(newTicket)
+        ]);
+        
+        const aiMessage = {
+          senderName: "Support Hub AI Assistant",
+          senderEmail: "ai-copilot@supporthub.com",
+          senderRole: "agent",
+          body: aiBody,
+          isInternal: false,
+          createdAt: new Date()
+        };
+
+        const refreshedTicket = await Ticket.findById(newTicket._id);
+        if (refreshedTicket) {
+          refreshedTicket.messages.push(aiMessage);
+          refreshedTicket.aiInsights = insights;
+          refreshedTicket.status = "pending"; // Mark as pending since AI has provided an answer
+          await refreshedTicket.save();
+          console.log(">>> AI Response & Insights appended to ticket database successfully.");
+          
+          if (io) {
+            io.emit("ticket:updated", refreshedTicket);
+            io.emit(`ticket:${refreshedTicket._id}:message`, refreshedTicket.messages[refreshedTicket.messages.length - 1]);
+          }
+        }
+      } catch (aiErr) {
+        console.error(">>> Error in background AI auto-responder:", aiErr.message);
+      }
+    }, 1500);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -213,6 +250,127 @@ export const rateTicket = async (req, res) => {
     if (io) io.emit("ticket:updated", ticket);
 
     res.json(ticket);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+export const getPublicTicket = async (req, res) => {
+  try {
+    const id = req.params.id;
+    let ticket;
+    
+    if (id.length === 24) {
+      ticket = await Ticket.findById(id);
+    }
+    
+    if (!ticket) {
+      const tickets = await Ticket.find({}).lean();
+      ticket = tickets.find(t => 
+        t._id.toString().toUpperCase().startsWith(id.toUpperCase()) ||
+        t._id.toString().toLowerCase().includes(id.toLowerCase())
+      );
+    }
+
+    if (!ticket) return res.status(404).json({ error: "Ticket not found with reference " + id });
+
+    const safeTicket = {
+      ...ticket,
+      messages: (ticket.messages || []).filter(msg => !msg.isInternal)
+    };
+
+    res.json(safeTicket);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const addPublicReply = async (req, res) => {
+  const io = req.app.get('io');
+  try {
+    const id = req.params.id;
+    const { body } = req.body;
+    if (!body) return res.status(400).json({ error: "Message body is required" });
+
+    let ticket;
+    if (id.length === 24) {
+      ticket = await Ticket.findById(id);
+    }
+    if (!ticket) {
+      const tickets = await Ticket.find({});
+      ticket = tickets.find(t => t._id.toString().toUpperCase().startsWith(id.toUpperCase()));
+    }
+
+    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+
+    const newMessage = {
+      senderName: ticket.customer || "Guest Customer",
+      senderEmail: ticket.email || "guest@company.com",
+      senderRole: 'user',
+      body,
+      isInternal: false,
+      createdAt: new Date()
+    };
+
+    ticket.messages.push(newMessage);
+    await ticket.save();
+
+    console.log(`>>> Public message added to ticket ${ticket._id}`);
+    
+    if (io) {
+      io.emit("ticket:updated", ticket);
+      io.emit(`ticket:${ticket._id}:message`, newMessage);
+      io.emit(`ticket:${id}:message`, newMessage);
+    }
+
+    const safeTicket = {
+      ...ticket.toObject(),
+      messages: ticket.messages.filter(msg => !msg.isInternal)
+    };
+
+    res.status(201).json(safeTicket);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+export const ratePublicTicket = async (req, res) => {
+  const io = req.app.get('io');
+  try {
+    const id = req.params.id;
+    const { score, feedback } = req.body;
+    if (!score || score < 1 || score > 5) {
+      return res.status(400).json({ error: "Valid rating score (1-5) is required" });
+    }
+
+    let ticket;
+    if (id.length === 24) {
+      ticket = await Ticket.findById(id);
+    }
+    if (!ticket) {
+      const tickets = await Ticket.find({});
+      ticket = tickets.find(t => t._id.toString().toUpperCase().startsWith(id.toUpperCase()));
+    }
+
+    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+
+    ticket.rating = {
+      score,
+      feedback: feedback || "",
+      ratedAt: new Date()
+    };
+
+    await ticket.save();
+    console.log(`>>> Public ticket ${ticket._id} rated with score ${score}`);
+
+    if (io) io.emit("ticket:updated", ticket);
+
+    const safeTicket = {
+      ...ticket.toObject(),
+      messages: ticket.messages.filter(msg => !msg.isInternal)
+    };
+
+    res.json(safeTicket);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

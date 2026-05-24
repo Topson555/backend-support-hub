@@ -20,6 +20,12 @@ const ticketSchema = new mongoose.Schema({
   assignee: { type: String, default: 'Unassigned', index: true },
   createdAt: { type: Date, default: Date.now, index: true },
   messages: [messageSchema],
+  aiInsights: {
+    suggestedCategory: { type: String, default: "" },
+    suggestedResponse: { type: String, default: "" },
+    urgencyLevel: { type: Number, default: 5 },
+    sentiment: { type: String, default: "Neutral" }
+  },
   rating: {
     score: { type: Number, min: 1, max: 5 },
     feedback: String,
