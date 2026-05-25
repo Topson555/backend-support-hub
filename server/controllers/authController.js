@@ -6,14 +6,14 @@ export const signup = async (req, res) => {
   console.log(`>>> Signup Request: ${req.body.email}`);
   try {
     const { name, email, password, staffCode } = req.body;
-    
+
     // Check if user already exists
     const existingUser = await User.findOne({ email }).lean();
     if (existingUser) return res.status(400).json({ error: "User already exists" });
 
     // Role Logic
     let role = 'user';
-    
+
     // Optimization: Check for staff code first
     if (staffCode && staffCode === process.env.STAFF_SIGNUP_CODE) {
       role = 'agent';
@@ -49,7 +49,11 @@ export const signup = async (req, res) => {
         id: newUser._id,
         name: newUser.name,
         email: newUser.email,
-        role: newUser.role
+        role: newUser.role,
+        avatar: "",
+        phoneNumber: "",
+        jobTitle: "",
+        department: ""
       }
     });
   } catch (err) {
@@ -62,7 +66,7 @@ export const login = async (req, res) => {
   console.log(`>>> Login Request: ${req.body.email}`);
   try {
     const { email, password } = req.body;
-    
+
     const user = await User.findOne({ email }).lean();
     if (!user) return res.status(400).json({ error: "Invalid credentials" });
 
@@ -81,7 +85,11 @@ export const login = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        avatar: user.avatar || "",
+        phoneNumber: user.phoneNumber || "",
+        jobTitle: user.jobTitle || "",
+        department: user.department || ""
       }
     });
   } catch (err) {
@@ -89,3 +97,49 @@ export const login = async (req, res) => {
     res.status(500).json({ error: "Authentication failed. Service might be busy." });
   }
 };
+export const updateProfile = async (req, res) => {
+  console.log(`>>> Update Profile Request for user: ${req.user.id}`);
+  try {
+    const { name, email, avatar, phoneNumber, jobTitle, department } = req.body;
+    const userId = req.user.id;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (email && email !== user.email) {
+      const emailExists = await User.findOne({ email }).lean();
+      if (emailExists) {
+        return res.status(400).json({ error: "Email already in use by another account" });
+      }
+      user.email = email;
+    }
+
+    if (name) user.name = name;
+    if (avatar !== undefined) user.avatar = avatar;
+    if (phoneNumber !== undefined) user.phoneNumber = phoneNumber;
+    if (jobTitle !== undefined) user.jobTitle = jobTitle;
+    if (department !== undefined) user.department = department;
+
+    await user.save();
+
+    res.json({
+      message: "Profile updated successfully",
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        avatar: user.avatar || "",
+        phoneNumber: user.phoneNumber || "",
+        jobTitle: user.jobTitle || "",
+        department: user.department || ""
+      }
+    });
+  } catch (err) {
+    console.error("Profile update error:", err);
+    res.status(500).json({ error: "Failed to update profile." });
+  }
+};
+
